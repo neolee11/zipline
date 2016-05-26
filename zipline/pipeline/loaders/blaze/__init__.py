@@ -3,7 +3,7 @@ from ._13d_filings import Blaze_13DFilingsLoader
 from .buyback_auth import BlazeBuybackAuthorizationsLoader
 from .core import (
     BlazeLoader,
-    NoDeltasWarning,
+    NoMetaDataWarning,
     from_blaze,
     global_loader,
 )
@@ -28,5 +28,5 @@ __all__ = (
     'BlazeLoader',
     'from_blaze',
     'global_loader',
-    'NoDeltasWarning',
+    'NoMetaDataWarning',
 )

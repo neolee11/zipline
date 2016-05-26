@@ -127,6 +127,7 @@ from __future__ import division, absolute_import
 from abc import ABCMeta, abstractproperty
 from collections import namedtuple, defaultdict
 from copy import copy
+import datetime
 from functools import partial
 from itertools import count
 import warnings
@@ -169,7 +170,6 @@ from zipline.pipeline.loaders.utils import (
 from zipline.pipeline.term import NotSpecified
 from zipline.lib.adjusted_array import AdjustedArray, can_represent_dtype
 from zipline.lib.adjustment import Float64Overwrite
-from zipline.utils.enum import enum
 from zipline.utils.input_validation import (
     expect_element,
     ensure_timezone,
@@ -196,7 +196,7 @@ is_invalid_deltas_node = complement(flip(isinstance, valid_deltas_node_types))
 get__name__ = op.attrgetter('__name__')
 
 
-class ExprData(namedtuple('ExprData', 'expr deltas odo_kwargs')):
+class ExprData(namedtuple('ExprData', 'expr deltas checkpoint odo_kwargs')):
     """A pair of expressions and data resources. The expresions will be
     computed using the resources as the starting scope.
 
@@ -209,11 +209,12 @@ class ExprData(namedtuple('ExprData', 'expr deltas odo_kwargs')):
     odo_kwargs : dict, optional
         The keyword arguments to forward to the odo calls internally.
     """
-    def __new__(cls, expr, deltas=None, odo_kwargs=None):
+    def __new__(cls, expr, deltas=None, checkpoint=None, odo_kwargs=None):
         return super(ExprData, cls).__new__(
             cls,
             expr,
             deltas,
+            checkpoint,
             odo_kwargs or {},
         )
 
@@ -224,6 +225,7 @@ class ExprData(namedtuple('ExprData', 'expr deltas odo_kwargs')):
         return super(ExprData, cls).__repr__(cls(
             str(self.expr),
             str(self.deltas),
+            str(self.checkpoint),
             self.odo_kwargs,
         ))
 
@@ -411,58 +413,66 @@ def _check_datetime_field(name, measure):
         )
 
 
-class NoDeltasWarning(UserWarning):
-    """Warning used to signal that no deltas could be found and none
-    were provided.
+class NoMetaDataWarning(UserWarning):
+    """Warning used to signal that no deltas or checkpoints could be found and
+    none were provided.
 
     Parameters
     ----------
     expr : Expr
         The expression that was searched.
+    field : {'deltas',  'checkpoints'}
+        The field that was looked up.
     """
-    def __init__(self, expr):
+    def __init__(self, expr, field):
         self._expr = expr
+        self._field = field
 
     def __str__(self):
-        return 'No deltas could be inferred from expr: %s' % self._expr
+        return 'No %s could be inferred from expr: %s' % (
+            self._field,
+            self._expr,
+        )
 
 
-no_deltas_rules = enum('warn', 'raise_', 'ignore')
+no_metadata_rules = frozenset({'warn', 'raise', 'ignore'})
 
 
-def get_deltas(expr, deltas, no_deltas_rule):
-    """Find the correct deltas for the expression.
+def _get_metadata(field, expr, metadata_expr, no_metadata_rule):
+    """Find the correct metadata expression for the expression.
 
     Parameters
     ----------
+    field : {'deltas', 'checkpoints'}
+        The kind of metadata expr to lookup.
     expr : Expr
         The baseline expression.
-    deltas : Expr, 'auto', or None
-        The deltas argument. If this is 'auto', then the deltas table will
+    metadata_expr : Expr, 'auto', or None
+        The metadata argument. If this is 'auto', then the metadata table will
         be searched for by walking up the expression tree. If this cannot be
         reflected, then an action will be taken based on the
-        ``no_deltas_rule``.
-    no_deltas_rule : no_deltas_rule
-        How to handle the case where deltas='auto' but no deltas could be
-        found.
+        ``no_metadata_rule``.
+    no_metadata_rule : {'warn', 'raise', 'ignore'}
+        How to handle the case where the metadata_expr='auto' but no expr
+        could be found.
 
     Returns
     -------
-    deltas : Expr or None
+    metadata : Expr or None
         The deltas table to use.
     """
-    if isinstance(deltas, bz.Expr) or deltas != 'auto':
-        return deltas
+    if isinstance(metadata_expr, bz.Expr) or metadata_expr != 'auto':
+        return metadata_expr
 
     try:
-        return expr._child[(expr._name or '') + '_deltas']
+        return expr._child['_'.join(((expr._name or ''), field))]
     except (ValueError, AttributeError):
-        if no_deltas_rule == no_deltas_rules.raise_:
+        if no_metadata_rule == 'raise':
             raise ValueError(
-                "no deltas table could be reflected for %s" % expr
+                "no %s table could be reflected for %s" % (field, expr)
             )
-        elif no_deltas_rule == no_deltas_rules.warn:
-            warnings.warn(NoDeltasWarning(expr))
+        elif no_metadata_rule == 'warn':
+            warnings.warn(NoMetaDataWarning(expr, field))
     return None
 
 
@@ -502,14 +512,19 @@ def _ensure_timestamp_field(dataset_expr, deltas):
     return dataset_expr, deltas
 
 
-@expect_element(no_deltas_rule=no_deltas_rules)
+@expect_element(
+    no_deltas_rule=no_metadata_rules,
+    no_checkpoints_rule=no_metadata_rules,
+)
 def from_blaze(expr,
                deltas='auto',
+               checkpoints='auto',
                loader=None,
                resources=None,
                odo_kwargs=None,
                missing_values=None,
-               no_deltas_rule=no_deltas_rules.warn):
+               no_deltas_rule='warn',
+               no_checkpoints_rule='warn'):
     """Create a Pipeline API object from a blaze expression.
 
     Parameters
@@ -533,9 +548,14 @@ def from_blaze(expr,
     missing_values : dict[str -> any], optional
         A dict mapping column names to missing values for those columns.
         Missing values are required for integral columns.
-    no_deltas_rule : no_deltas_rule
+    no_deltas_rule : {'warn', 'raise', 'ignore'}, optional
         What should happen if ``deltas='auto'`` but no deltas can be found.
         'warn' says to raise a warning but continue.
+        'raise' says to raise an exception if no deltas can be found.
+        'ignore' says take no action and proceed with no deltas.
+    no_checkpoints_rule : {'warn', 'raise', 'ignore'}, optional
+        What should happen if ``checkpoints='auto'`` but no checkpoints can be
+        found. 'warn' says to raise a warning but continue.
         'raise' says to raise an exception if no deltas can be found.
         'ignore' says take no action and proceed with no deltas.
 
@@ -548,7 +568,18 @@ def from_blaze(expr,
         is passed, a ``BoundColumn`` on the dataset that would be constructed
         from passing the parent is returned.
     """
-    deltas = get_deltas(expr, deltas, no_deltas_rule)
+    deltas = _get_metadata(
+        'deltas',
+        expr,
+        deltas,
+        no_deltas_rule,
+    )
+    checkpoints = _get_metadata(
+        'checkpoints',
+        expr,
+        checkpoints,
+        no_checkpoints_rule,
+    )
     if deltas is not None:
         invalid_nodes = tuple(filter(is_invalid_deltas_node, expr._subterms()))
         if invalid_nodes:
@@ -632,6 +663,9 @@ def from_blaze(expr,
         bind_expression_to_resources(deltas, resources)
         if deltas is not None else
         None,
+        bind_expression_to_resources(checkpoints, resources)
+        if checkpoints is not None else
+        None,
         odo_kwargs=odo_kwargs,
     )
     if single_column is not None:
@@ -669,10 +703,12 @@ def overwrite_novel_deltas(baseline, deltas, dates):
     ) <= 1
     novel_deltas = deltas.loc[novel_idx]
     non_novel_deltas = deltas.loc[~novel_idx]
-    return sort_values(pd.concat(
+    cat = pd.concat(
         (baseline, novel_deltas),
         ignore_index=True,
-    ), TS_FIELD_NAME), non_novel_deltas
+    )
+    sort_values(cat, TS_FIELD_NAME, inplace=True)
+    return cat, non_novel_deltas
 
 
 def overwrite_from_dates(asof, dense_dates, sparse_dates, asset_idx, value):
@@ -822,6 +858,31 @@ def adjustments_from_deltas_with_sids(dense_dates,
     return dict(adjustments)  # no subclasses of dict
 
 
+def _checkpoint_ts(lower_dt):
+    """Given a lower time bound for a query, get the date in the checkpoint
+    table to query for.
+
+    Parameters
+    ----------
+    lower_dt : datetime
+        The lower time bound for the query.
+
+    Returns
+    -------
+    checkpoint_ts : pd.Timestamp
+        The date in the checkpoint table to query for.
+    """
+    date = lower_dt.date()
+    return pd.Timestamp.combine(
+        date.replace(
+            day=1,
+            month=(date.month - 2) % 12 + 1,
+            year=date.year - 1 if date.month == 1 else date.year,
+        ),
+        datetime.time(0),
+    ).tz_localize('US/Eastern')
+
+
 class BlazeLoader(dict):
     """A PipelineLoader for datasets constructed with ``from_blaze``.
 
@@ -873,13 +934,14 @@ class BlazeLoader(dict):
         except ValueError:
             raise AssertionError('all columns must come from the same dataset')
 
-        expr, deltas, odo_kwargs = self[dataset]
+        expr, deltas, checkpoints, odo_kwargs = self[dataset]
         have_sids = SID_FIELD_NAME in expr.fields
         asset_idx = pd.Series(index=assets, data=np.arange(len(assets)))
         assets = list(map(int, assets))  # coerce from numpy.int64
         added_query_fields = [AD_FIELD_NAME, TS_FIELD_NAME] + (
             [SID_FIELD_NAME] if have_sids else []
         )
+        colnames = added_query_fields + list(map(getname, columns))
 
         data_query_time = self._data_query_time
         data_query_tz = self._data_query_tz
@@ -890,30 +952,15 @@ class BlazeLoader(dict):
             data_query_tz,
         )
 
-        def where(e):
-            """Create the query to run against the resources.
-
-            Parameters
-            ----------
-            e : Expr
-                The baseline or deltas expression.
-
-            Returns
-            -------
-            q : Expr
-                The query to run.
-            """
-            return e[
-                (e[TS_FIELD_NAME] <= upper_dt)
-            ][added_query_fields + list(map(getname, columns))]
-
-        def collect_expr(e):
+        def collect_expr(e, lower):
             """Materialize the expression as a dataframe.
 
             Parameters
             ----------
             e : Expr
                 The baseline or deltas expression.
+            lower : datetime
+                The lower time bound to query.
 
             Returns
             -------
@@ -925,17 +972,36 @@ class BlazeLoader(dict):
             This can return more data than needed. The in memory reindex will
             handle this.
             """
-            df = odo(where(e), pd.DataFrame, **odo_kwargs)
-            df.sort(TS_FIELD_NAME, inplace=True)  # sort for the groupby later
-            return df
+            predicate = e[TS_FIELD_NAME] <= upper_dt
+            if lower is not None:
+                predicate &= e[TS_FIELD_NAME] >= lower
 
-        materialized_expr = collect_expr(expr)
-        materialized_deltas = (
-            collect_expr(deltas)
-            if deltas is not None else
-            pd.DataFrame(
-                columns=added_query_fields + list(map(getname, columns)),
+            return odo(e[predicate][colnames], pd.DataFrame, **odo_kwargs)
+
+        if checkpoints is not None:
+            ts = checkpoints[TS_FIELD_NAME]
+            materialized_checkpoint = odo(
+                checkpoints[ts == _checkpoint_ts(lower_dt)][colnames],
+                pd.DataFrame,
+                **odo_kwargs
             )
+            lower = (
+                lower_dt
+                if materialized_checkpoint.empty else
+                materialized_checkpoint.loc[0, TS_FIELD_NAME]
+            )
+        else:
+            materialized_checkpoint = pd.DataFrame(columns=colnames)
+            lower = None
+
+        materialized_expr = pd.concat((
+            materialized_checkpoint,
+            collect_expr(expr, lower),
+        ))
+        materialized_deltas = (
+            collect_expr(deltas, lower)
+            if deltas is not None else
+            pd.DataFrame(columns=colnames)
         )
 
         # It's not guaranteed that assets returned by the engine will contain

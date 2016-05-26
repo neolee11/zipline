@@ -26,11 +26,10 @@ from zipline.pipeline.engine import SimplePipelineEngine
 from zipline.pipeline.loaders.blaze import (
     from_blaze,
     BlazeLoader,
-    NoDeltasWarning,
+    NoMetaDataWarning,
 )
 from zipline.pipeline.loaders.blaze.core import (
     NonPipelineField,
-    no_deltas_rules,
 )
 from zipline.testing.fixtures import WithAssetFinder
 from zipline.utils.numpy_utils import (
@@ -112,7 +111,7 @@ class BlazeToPipelineTestCase(WithAssetFinder, ZiplineTestCase):
         ds = from_blaze(
             expr,
             loader=self.garbage_loader,
-            no_deltas_rule=no_deltas_rules.ignore,
+            no_deltas_rule='ignore',
             missing_values=self.missing_values,
         )
         self.assertEqual(ds.__name__, name)
@@ -129,7 +128,7 @@ class BlazeToPipelineTestCase(WithAssetFinder, ZiplineTestCase):
             from_blaze(
                 expr,
                 loader=self.garbage_loader,
-                no_deltas_rule=no_deltas_rules.ignore,
+                no_deltas_rule='ignore',
                 missing_values=self.missing_values,
             ),
             ds,
@@ -141,7 +140,7 @@ class BlazeToPipelineTestCase(WithAssetFinder, ZiplineTestCase):
         value = from_blaze(
             expr.value,
             loader=self.garbage_loader,
-            no_deltas_rule=no_deltas_rules.ignore,
+            no_deltas_rule='ignore',
             missing_values=self.missing_values,
         )
         self.assertEqual(value.name, 'value')
@@ -153,7 +152,7 @@ class BlazeToPipelineTestCase(WithAssetFinder, ZiplineTestCase):
             from_blaze(
                 expr.value,
                 loader=self.garbage_loader,
-                no_deltas_rule=no_deltas_rules.ignore,
+                no_deltas_rule='ignore',
                 missing_values=self.missing_values,
             ),
             value,
@@ -162,7 +161,7 @@ class BlazeToPipelineTestCase(WithAssetFinder, ZiplineTestCase):
             from_blaze(
                 expr,
                 loader=self.garbage_loader,
-                no_deltas_rule=no_deltas_rules.ignore,
+                no_deltas_rule='ignore',
                 missing_values=self.missing_values,
             ).value,
             value,
@@ -173,7 +172,7 @@ class BlazeToPipelineTestCase(WithAssetFinder, ZiplineTestCase):
             from_blaze(
                 expr,
                 loader=self.garbage_loader,
-                no_deltas_rule=no_deltas_rules.ignore,
+                no_deltas_rule='ignore',
                 missing_values=self.missing_values,
             ),
             value.dataset,
@@ -196,7 +195,7 @@ class BlazeToPipelineTestCase(WithAssetFinder, ZiplineTestCase):
             from_blaze(
                 expr,
                 loader=self.garbage_loader,
-                no_deltas_rule=no_deltas_rules.ignore,
+                no_deltas_rule='ignore',
             )
         self.assertIn("'asof_date'", str(e.exception))
         self.assertIn(repr(str(expr.dshape.measure)), str(e.exception))
@@ -229,12 +228,12 @@ class BlazeToPipelineTestCase(WithAssetFinder, ZiplineTestCase):
             from_blaze(
                 expr,
                 loader=loader,
-                no_deltas_rule=no_deltas_rules.warn,
+                no_deltas_rule='warn',
                 missing_values=self.missing_values,
             )
-        self.assertEqual(len(ws), 1)
+        self.assertEqual(len(ws), 2)
         w = ws[0].message
-        self.assertIsInstance(w, NoDeltasWarning)
+        self.assertIsInstance(w, NoMetaDataWarning)
         self.assertIn(str(expr), str(w))
 
     def test_auto_deltas_fail_raise(self):
@@ -244,7 +243,7 @@ class BlazeToPipelineTestCase(WithAssetFinder, ZiplineTestCase):
             from_blaze(
                 expr,
                 loader=loader,
-                no_deltas_rule=no_deltas_rules.raise_,
+                no_deltas_rule='raise',
             )
         self.assertIn(str(expr), str(e.exception))
 
@@ -261,7 +260,7 @@ class BlazeToPipelineTestCase(WithAssetFinder, ZiplineTestCase):
         ds = from_blaze(
             expr,
             loader=self.garbage_loader,
-            no_deltas_rule=no_deltas_rules.ignore,
+            no_deltas_rule='ignore',
         )
         with self.assertRaises(AttributeError):
             ds.a
@@ -586,7 +585,7 @@ class BlazeToPipelineTestCase(WithAssetFinder, ZiplineTestCase):
         ds = from_blaze(
             expr,
             loader=loader,
-            no_deltas_rule=no_deltas_rules.ignore,
+            no_deltas_rule='ignore',
             missing_values=self.missing_values,
         )
         p = Pipeline()
@@ -617,7 +616,7 @@ class BlazeToPipelineTestCase(WithAssetFinder, ZiplineTestCase):
         ds = from_blaze(
             expr,
             loader=loader,
-            no_deltas_rule=no_deltas_rules.ignore,
+            no_deltas_rule='ignore',
             missing_values=self.missing_values,
         )
         p = Pipeline()
@@ -1057,7 +1056,7 @@ class BlazeToPipelineTestCase(WithAssetFinder, ZiplineTestCase):
             expr,
             deltas,
             loader=loader,
-            no_deltas_rule=no_deltas_rules.raise_,
+            no_deltas_rule='raise',
             missing_values=self.missing_values,
         )
         p = Pipeline()
