@@ -59,8 +59,8 @@ class SliceTestCase(WithTradingEnvironment, ZiplineTestCase):
 
     def test_slice(self):
         my_asset_column = 0
-        start_date_index = 6
-        end_date_index = 10
+        start_date_index = 5
+        end_date_index = 9
 
         assets = self.asset_finder.retrieve_all(self.sids)
         my_asset = assets[my_asset_column]
@@ -101,8 +101,8 @@ class SliceTestCase(WithTradingEnvironment, ZiplineTestCase):
             pipe.add(OpenPrice()[my_asset], 'open_slice')
 
     def test_single_column_output(self):
-        start_date_index = 6
-        end_date_index = 10
+        start_date_index = 5
+        end_date_index = 9
         alternating_mask = (AssetIDPlusDay() % 2).eq(0)
 
         class SingleColumnOutput(CustomFactor):

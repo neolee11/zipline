@@ -612,13 +612,8 @@ class ConstantInputTestCase(WithTradingEnvironment, ZiplineTestCase):
             shape=(num_dates, num_assets), first=False,
         )
 
-        expected_no_mask_result = array(
-            [[True, True, True, True],
-             [True, True, True, True],
-             [True, True, True, True],
-             [True, True, True, True],
-             [True, True, True, True]],
-            dtype=bool,
+        expected_no_mask_result = full(
+            shape=(num_dates, num_assets), fill_value=True, dtype=bool,
         )
 
         masks = cascading_mask, alternating_mask, NotSpecified
@@ -1271,13 +1266,8 @@ class ParameterizedFactorTestCase(WithTradingEnvironment, ZiplineTestCase):
             shape=(num_days, num_assets),
         )
 
-        expected_no_mask_result = array(
-            [[True, True, True],
-             [True, True, True],
-             [True, True, True],
-             [True, True, True],
-             [True, True, True]],
-            dtype=bool,
+        expected_no_mask_result = full(
+            shape=(num_days, num_assets), fill_value=True, dtype=bool,
         )
 
         masks = cascading_mask, alternating_mask, NotSpecified
@@ -1289,10 +1279,16 @@ class ParameterizedFactorTestCase(WithTradingEnvironment, ZiplineTestCase):
 
         for mask, expected_mask in zip(masks, expected_mask_results):
             pearson_factor = RollingPearsonOfReturns(
-                my_asset, returns_length, correlation_length, mask,
+                target=my_asset,
+                returns_length=returns_length,
+                correlation_length=correlation_length,
+                mask=mask,
             )
             spearman_factor = RollingSpearmanOfReturns(
-                my_asset, returns_length, correlation_length, mask,
+                target=my_asset,
+                returns_length=returns_length,
+                correlation_length=correlation_length,
+                mask=mask,
             )
 
             pipeline = Pipeline(
