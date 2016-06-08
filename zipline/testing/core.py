@@ -1144,6 +1144,70 @@ def create_empty_splits_mergers_frame():
     )
 
 
+def make_alternating_boolean_array(shape, first=True):
+    """
+    Create a 2D numpy array with the given shape containing alternating values
+    of False, True, False, True,... along each row and each column.
+
+    Examples
+    --------
+    >>> make_alternating_boolean_array((4,4))
+    array([[ True, False,  True, False],
+           [False,  True, False,  True],
+           [ True, False,  True, False],
+           [False,  True, False,  True]], dtype=bool)
+    >>> make_alternating_boolean_array((4,3), first=False)
+    array([[False,  True, False],
+           [ True, False,  True],
+           [False,  True, False],
+           [ True, False,  True]], dtype=bool)
+    """
+    if len(shape) != 2:
+        raise ValueError(
+            'Shape must be 2-dimensional. Given shape was {}'.format(shape)
+        )
+    alternating = np.empty(shape, dtype=np.bool)
+    for row in alternating:
+        row[::2] = first
+        row[1::2] = not(first)
+        first = not(first)
+    return alternating
+
+
+def make_cascading_boolean_array(shape, first=True):
+    """
+    Create a numpy array with the given shape containing cascading values of
+    `first`.
+
+    Examples
+    --------
+    >>> make_cascading_boolean_array((4,4))
+    array([[ True,  True,  True, False],
+           [ True,  True, False, False],
+           [ True, False, False, False],
+           [False, False, False, False]], dtype=bool)
+    >>> make_cascading_boolean_array((4,2))
+    array([[ True, False],
+           [False, False],
+           [False, False],
+           [False, False]], dtype=bool)
+    >>> make_cascading_boolean_array((2,4))
+    array([[ True,  True,  True, False],
+           [ True,  True, False, False]], dtype=bool)
+    """
+    if len(shape) != 2:
+        raise ValueError(
+            'Shape must be 2-dimensional. Given shape was {}'.format(shape)
+        )
+    cascading = np.full(shape, not(first), dtype=np.bool)
+    ending_col = shape[1] - 1
+    for row in cascading:
+        if ending_col >= 0:
+            row[:ending_col] = first
+            ending_col -= 1
+    return cascading
+
+
 @expect_dimensions(array=2)
 def permute_rows(seed, array):
     """

@@ -1,7 +1,11 @@
 """
 Mixins classes for use with Filters and Factors.
 """
-from numpy import full, recarray
+from numpy import (
+    array,
+    full,
+    recarray,
+)
 
 from zipline.utils.control_flow import nullctx
 from zipline.errors import WindowLengthNotPositive, UnsupportedDataType
@@ -152,12 +156,11 @@ class CustomTermMixin(object):
         inputs = []
         for input_ in windows:
             window = next(input_)
-            try:
-                inputs.append(window[:, column_mask])
-            except IndexError:
-                # Ensure the input is a single column.
-                assert window.shape[1] == 1
+            if window.shape[1] == 1:
+                # Do not mask single-column inputs.
                 inputs.append(window)
+            else:
+                inputs.append(window[:, column_mask])
         return inputs
 
     def _compute(self, windows, dates, assets, mask):

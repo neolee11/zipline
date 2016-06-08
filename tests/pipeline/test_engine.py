@@ -75,6 +75,8 @@ from zipline.pipeline.loaders.synthetic import (
 from zipline.pipeline.term import NotSpecified
 from zipline.testing import (
     check_arrays,
+    make_alternating_boolean_array,
+    make_cascading_boolean_array,
     parameter_space,
     product_upper_triangle,
 )
@@ -421,6 +423,8 @@ class ConstantInputTestCase(WithTradingEnvironment, ZiplineTestCase):
         assets = self.assets
         asset_ids = self.asset_ids
         constants = self.constants
+        num_dates = len(dates)
+        num_assets = len(assets)
         open = USEquityPricing.open
         close = USEquityPricing.close
         engine = SimplePipelineEngine(
@@ -435,19 +439,13 @@ class ConstantInputTestCase(WithTradingEnvironment, ZiplineTestCase):
             return DataFrame(expected_values, index=dates, columns=assets)
 
         cascading_mask = AssetIDPlusDay() < (asset_ids[-1] + dates[0].day)
-        expected_cascading_mask_result = array(
-            [[True,  True,  True, False],
-             [True,  True, False, False],
-             [True, False, False, False]],
-            dtype=bool,
+        expected_cascading_mask_result = make_cascading_boolean_array(
+            shape=(num_dates, num_assets),
         )
 
         alternating_mask = (AssetIDPlusDay() % 2).eq(0)
-        expected_alternating_mask_result = array(
-            [[False,  True, False,  True],
-             [True,  False,  True, False],
-             [False,  True, False,  True]],
-            dtype=bool,
+        expected_alternating_mask_result = make_alternating_boolean_array(
+            shape=(num_dates, num_assets), first=False,
         )
 
         masks = cascading_mask, alternating_mask
@@ -592,6 +590,8 @@ class ConstantInputTestCase(WithTradingEnvironment, ZiplineTestCase):
         assets = self.assets
         asset_ids = self.asset_ids
         constants = self.constants
+        num_dates = len(dates)
+        num_assets = len(assets)
         open = USEquityPricing.open
         close = USEquityPricing.close
         engine = SimplePipelineEngine(
@@ -603,23 +603,13 @@ class ConstantInputTestCase(WithTradingEnvironment, ZiplineTestCase):
             return DataFrame(expected_values, index=dates, columns=assets)
 
         cascading_mask = AssetIDPlusDay() < (asset_ids[-1] + dates[0].day)
-        expected_cascading_mask_result = array(
-            [[True,   True,  True, False],
-             [True,   True, False, False],
-             [True,  False, False, False],
-             [False, False, False, False],
-             [False, False, False, False]],
-            dtype=bool,
+        expected_cascading_mask_result = make_cascading_boolean_array(
+            shape=(num_dates, num_assets),
         )
 
         alternating_mask = (AssetIDPlusDay() % 2).eq(0)
-        expected_alternating_mask_result = array(
-            [[False,  True, False,  True],
-             [True,  False,  True, False],
-             [False,  True, False,  True],
-             [True,  False,  True, False],
-             [False,  True, False,  True]],
-            dtype=bool,
+        expected_alternating_mask_result = make_alternating_boolean_array(
+            shape=(num_dates, num_assets), first=False,
         )
 
         expected_no_mask_result = array(
@@ -1258,54 +1248,79 @@ class ParameterizedFactorTestCase(WithTradingEnvironment, ZiplineTestCase):
         `RollingSpearmanOfReturns`.
         """
         my_asset_column = 0
-        start_date_index = 6
-        end_date_index = 10
+        start_date_index = 5
+        end_date_index = 9
 
-        assets = self.asset_finder.retrieve_all(self.sids)
+        sids = self.sids
+        dates = self.dates
+        assets = self.asset_finder.retrieve_all(sids)
         my_asset = assets[my_asset_column]
-        my_asset_filter = (AssetID() != (my_asset_column + 1))
         num_days = end_date_index - start_date_index + 1
+        num_assets = len(assets)
 
-        # Our correlation factors require that their target asset is not
-        # filtered out, so make sure that masking out our target asset does not
-        # take effect. That is, a filter which filters out only our target
-        # asset should produce the same result as if no mask was passed at all.
-        for mask in (NotSpecified, my_asset_filter):
-            pearson_factor = RollingPearsonOfReturns(
-                target=my_asset,
-                returns_length=returns_length,
-                correlation_length=correlation_length,
-                mask=mask,
+        returns = Returns(window_length=returns_length)
+
+        cascading_mask = \
+            AssetIDPlusDay() < (sids[-1] + dates[start_date_index].day)
+        expected_cascading_mask_result = make_cascading_boolean_array(
+            shape=(num_days, num_assets),
+        )
+
+        alternating_mask = (AssetIDPlusDay() % 2).eq(0)
+        expected_alternating_mask_result = make_alternating_boolean_array(
+            shape=(num_days, num_assets),
+        )
+
+        expected_no_mask_result = array(
+            [[True, True, True],
+             [True, True, True],
+             [True, True, True],
+             [True, True, True],
+             [True, True, True]],
+            dtype=bool,
+        )
+
+        masks = cascading_mask, alternating_mask, NotSpecified
+        expected_mask_results = (
+            expected_cascading_mask_result,
+            expected_alternating_mask_result,
+            expected_no_mask_result,
+        )
+
+        for mask, expected_mask in zip(masks, expected_mask_results):
+            pearson_factor = returns.rolling_pearson(
+                returns[my_asset], correlation_length, mask,
             )
-            spearman_factor = RollingSpearmanOfReturns(
-                target=my_asset,
-                returns_length=returns_length,
-                correlation_length=correlation_length,
-                mask=mask,
+            spearman_factor = returns.rolling_spearman(
+                returns[my_asset], correlation_length, mask,
             )
+
+            pipeline = Pipeline(
+                columns={
+                    'pearson_factor': pearson_factor,
+                    'spearman_factor': spearman_factor,
+                },
+            )
+            if mask is not NotSpecified:
+                pipeline.add(mask, 'mask')
 
             results = self.engine.run_pipeline(
-                Pipeline(
-                    columns={
-                        'pearson_factor': pearson_factor,
-                        'spearman_factor': spearman_factor,
-                    },
-                ),
-                self.dates[start_date_index],
-                self.dates[end_date_index],
+                pipeline, dates[start_date_index], dates[end_date_index],
             )
             pearson_results = results['pearson_factor'].unstack()
             spearman_results = results['spearman_factor'].unstack()
+            if mask is not NotSpecified:
+                mask_results = results['mask'].unstack()
+                check_arrays(mask_results.values, expected_mask)
 
             # Run a separate pipeline that calculates returns starting
             # (correlation_length - 1) days prior to our start date. This is
             # because we need (correlation_length - 1) extra days of returns to
             # compute our expected correlations.
-            returns = Returns(window_length=returns_length)
             results = self.engine.run_pipeline(
                 Pipeline(columns={'returns': returns}),
-                self.dates[start_date_index - (correlation_length - 1)],
-                self.dates[end_date_index],
+                dates[start_date_index - (correlation_length - 1)],
+                dates[end_date_index],
             )
             returns_results = results['returns'].unstack()
 
@@ -1328,22 +1343,19 @@ class ParameterizedFactorTestCase(WithTradingEnvironment, ZiplineTestCase):
                         my_asset_returns, other_asset_returns,
                     )[0]
 
-            assert_frame_equal(
-                pearson_results,
-                DataFrame(
-                    expected_pearson_results,
-                    index=self.dates[start_date_index:end_date_index + 1],
-                    columns=assets,
-                ),
+            expected_pearson_results = DataFrame(
+                data=where(expected_mask, expected_pearson_results, nan),
+                index=dates[start_date_index:end_date_index + 1],
+                columns=assets,
             )
-            assert_frame_equal(
-                spearman_results,
-                DataFrame(
-                    expected_spearman_results,
-                    index=self.dates[start_date_index:end_date_index + 1],
-                    columns=assets,
-                ),
+            assert_frame_equal(pearson_results, expected_pearson_results)
+
+            expected_spearman_results = DataFrame(
+                data=where(expected_mask, expected_spearman_results, nan),
+                index=dates[start_date_index:end_date_index + 1],
+                columns=assets,
             )
+            assert_frame_equal(spearman_results, expected_spearman_results)
 
     @parameter_space(returns_length=[2, 3], regression_length=[3, 4])
     def test_regression_of_returns_factor(self,

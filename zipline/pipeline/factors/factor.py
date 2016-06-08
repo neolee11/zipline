@@ -6,6 +6,7 @@ from operator import attrgetter
 from numbers import Number
 
 from numpy import inf, where
+from scipy.stats import pearsonr, spearmanr
 
 from zipline.assets import Asset
 from zipline.errors import UnknownRankMethod
@@ -13,19 +14,6 @@ from zipline.lib.normalize import naive_grouped_rowwise_apply
 from zipline.lib.rank import masked_rankdata_2d
 from zipline.pipeline.api_utils import restrict_to_dtype
 from zipline.pipeline.classifiers import Classifier, Everything, Quantiles
-from zipline.pipeline.mixins import (
-    CustomTermMixin,
-    LatestMixin,
-    PositiveWindowLengthMixin,
-    RestrictedDTypeMixin,
-    SingleInputMixin,
-)
-from zipline.pipeline.term import (
-    ComputableTerm,
-    NotSpecified,
-    NotSpecifiedType,
-    Term,
-)
 from zipline.pipeline.expression import (
     BadBinaryOperator,
     COMPARISONS,
@@ -43,7 +31,20 @@ from zipline.pipeline.filters import (
     PercentileFilter,
     NullFilter,
 )
+from zipline.pipeline.mixins import (
+    CustomTermMixin,
+    LatestMixin,
+    PositiveWindowLengthMixin,
+    RestrictedDTypeMixin,
+    SingleInputMixin,
+)
 from zipline.pipeline.slice import Slice
+from zipline.pipeline.term import (
+    ComputableTerm,
+    NotSpecified,
+    NotSpecifiedType,
+    Term,
+)
 from zipline.utils.functional import with_doc, with_name
 from zipline.utils.input_validation import expect_types
 from zipline.utils.math_utils import nanmean, nanstd
@@ -622,6 +623,18 @@ class Factor(RestrictedDTypeMixin, ComputableTerm):
         :class:`zipline.pipeline.factors.factor.Rank`
         """
         return Rank(self, method=method, ascending=ascending, mask=mask)
+
+    def rolling_pearson(self,
+                        target_slice,
+                        correlation_length,
+                        mask=NotSpecified):
+        return RollingPearson(self, target_slice, correlation_length, mask)
+
+    def rolling_spearman(self,
+                         target_slice,
+                         correlation_length,
+                         mask=NotSpecified):
+        return RollingSpearman(self, target_slice, correlation_length, mask)
 
     @expect_types(bins=int, mask=(Filter, NotSpecifiedType))
     def quantiles(self, bins, mask=NotSpecified):
@@ -1283,3 +1296,36 @@ class Latest(LatestMixin, CustomFactor):
 
     def compute(self, today, assets, out, data):
         out[:] = data[-1]
+
+
+class _RollingCorrelation(CustomFactor, SingleInputMixin):
+
+    def __new__(cls,
+                target_factor,
+                target_slice,
+                correlation_length,
+                mask=NotSpecified):
+        return super(_RollingCorrelation, cls).__new__(
+            cls,
+            inputs=[target_factor, target_slice],
+            window_length=correlation_length,
+            mask=mask,
+        )
+
+
+class RollingPearson(_RollingCorrelation):
+
+    def compute(self, today, assets, out, factor_data, slice_data):
+        slice_data_column = slice_data[:, 0]
+        for i in range(len(out)):
+            # pearsonr returns the R-value and the P-value.
+            out[i] = pearsonr(factor_data[:, i], slice_data_column)[0]
+
+
+class RollingSpearman(_RollingCorrelation):
+
+    def compute(self, today, assets, out, factor_data, slice_data):
+        slice_data_column = slice_data[:, 0]
+        for i in range(len(out)):
+            # spearmanr returns the R-value and the P-value.
+            out[i] = spearmanr(factor_data[:, i], slice_data_column)[0]
