@@ -1176,8 +1176,8 @@ def make_alternating_boolean_array(shape, first=True):
 
 def make_cascading_boolean_array(shape, first=True):
     """
-    Create a numpy array with the given shape containing cascading values of
-    `first`.
+    Create a numpy array with the given shape containing cascading boolean
+    values, with `first` being the top-left value.
 
     Examples
     --------

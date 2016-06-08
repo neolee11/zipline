@@ -106,7 +106,7 @@ class SliceTestCase(WithTradingEnvironment, ZiplineTestCase):
         alternating_mask = (AssetIDPlusDay() % 2).eq(0)
 
         class SingleColumnOutput(CustomFactor):
-            window_length = 1
+            window_length = 3
             inputs = [USEquityPricing.close]
             ndim = 1
 
@@ -114,7 +114,7 @@ class SliceTestCase(WithTradingEnvironment, ZiplineTestCase):
                 # Because we specified ndim as 1, `out` should be a singleton
                 # array but `close` should be a regular sized input.
                 assert out.shape == (1,)
-                assert close.shape == (1, 3)
+                assert close.shape == (3, 1)
                 out[:] = close.mean()
 
         class Demean(CustomFactor):

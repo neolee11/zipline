@@ -1288,11 +1288,11 @@ class ParameterizedFactorTestCase(WithTradingEnvironment, ZiplineTestCase):
         )
 
         for mask, expected_mask in zip(masks, expected_mask_results):
-            pearson_factor = returns.rolling_pearson(
-                returns[my_asset], correlation_length, mask,
+            pearson_factor = RollingPearsonOfReturns(
+                my_asset, returns_length, correlation_length, mask,
             )
-            spearman_factor = returns.rolling_spearman(
-                returns[my_asset], correlation_length, mask,
+            spearman_factor = RollingSpearmanOfReturns(
+                my_asset, returns_length, correlation_length, mask,
             )
 
             pipeline = Pipeline(
